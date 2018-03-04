@@ -7,94 +7,299 @@
 # Copyright: Markus Binsteiner, 2018
 # License: GPL v3
 
+# =============================================================
+# global vars
+PROGNAME="frocker"
+
+DOCKER_ID="local"
+FRECKLES_VERSION="git"
+#NO_CACHE="--no-cache"
+
+# =============================================================
+# Helper functions
+
+function command_exists {
+type "$1" > /dev/null 2>&1 ;
+}
+
+function error_exit {
+
+#	----------------------------------------------------------------
+#	Function for exit due to fatal program error
+#		Accepts 1 argument:
+#			string containing descriptive error message
+#	----------------------------------------------------------------
+
+echo ""
+error_output "${PROGNAME}: ${1:-"Unknown Error"}" 1>&2
+echo ""
+exit 1
+}
+
+function error_output {
+# log $1
+(>&2 echo "$@")
+}
+
+
+function display_command_build_help {
+
+echo ""
+echo "Usage:"
+echo "    frocker build -h                               display this help message."
+echo "    frocker build [-i IMAGE_NAME] [-r CONTEXT_REPO]      build a docker container for the current folder, optionally using the provided name"
+}
+
+function build {
+
+image_name=${1}
+repos=${2}
+vars=${3}
+
+if [[ ! -f "${THIS_DIR}/Dockerfile" ]]; then
+    echo "* no Dockerfile found in this folder, creating default one..."
+    echo "FROM freckles:freckelize-prod" > "${THIS_DIR}/Dockerfile"
+fi
+
+echo ""
+echo "- starting build process..."
+echo ""
+
+docker build ${NO_CACHE} -t "${DOCKER_ID}:${1}" -f Dockerfile --build-arg FRECKLES_VERSION="${FRECKLES_VERSION}" --build-arg FRECKLE_CONTEXT_REPOS="${repos}" --build-arg FRECKLE_EXTRA_VARS="${vars}" .  || error_exit 'docker built process failed'
+}
+
+function command_build {
+
+local repos=""
+local vars=""
+
+while getopts ":hi:r:v:" opt; do
+    case ${opt} in
+        h )
+            display_command_build_help
+            exit 0
+            ;;
+        i )
+            name=$OPTARG
+            ;;
+        r )
+            repos="${repos} -r $OPTARG"
+            ;;
+        v )
+            if [[ "$OPTARG" = /* ]]; then
+                echo "No absolute paths allowed, please use a relative path, starting from the base freckle folder."
+                exit 1
+            fi
+            vars="${vars} -v /freckle/$OPTARG"
+            ;;
+        \? )
+            echo "Invalid Option: -$OPTARG" 1>&2
+            display_command_build_help
+            exit 1
+            ;;
+        : )
+            echo "Invalid Option: -$OPTARG requires an argument" 1>&2
+            display_command_build_help
+            exit 1
+            ;;
+    esac
+done
+
+if [[ -z "$name" ]]; then
+    name="freckelize_${THIS_DIR_NAME}"
+fi
+
+if [[ -z "$vars" ]]; then
+    if [[ ! -f "${THIS_DIR}/.freckelize/docker.yml" ]]; then
+        echo "No extra vars provided, and no defaults file '.freckelize/docker.yml exists. Creating one, and using it..."
+        mkdir -p "${THIS_DIR}/.freckelize"
+        echo "
+- freckle:
+    owner: freckles
+    group: freckles
+    freckle_docker: true
+
+" > "${THIS_DIR}/.freckelize/docker.yml"
+    else
+       echo "No extra vars provided, using values from existing '.freckelize/docker.yml"
+    fi
+    vars="-v /freckle/.freckelize/docker.yml"
+
+fi
+
+build "${name}" "${repos}" "${vars}"
+
+}
+
+function run {
+
+container_name="${1}"
+image_name="${2}"
+ports="${3}"
+mounts="${4}"
+
+# check if image exists
+if [[ "$(docker images -q ${image_name} 2> /dev/null)" == "" ]]; then
+    echo "No image '${image_name}' exists. Run build step first."
+    exit 1
+fi
+
+result=$( docker ps | grep ${container_name} )
+
+if [[ -n "$result" ]]; then
+    echo "Container '${container_name}' already running. Doing nothing..."
+    exit 0
+fi
+
+result=$( docker ps -a | grep ${container_name} )
+
+if [[ -n "$result" ]]; then
+    echo "Container '${container_name}' already exists, but stopped. Starting..."
+    docker start "${container_name}"
+else
+   echo "Container '${container_name}' does not exist, creating and starting it..."
+   docker_id=$(docker run --name "${container_name}" ${ports} ${mounts} -d "${image_name}")
+   echo "   container id: ${docker_id}"
+fi
+
+}
+
+function display_command_run_help {
+
+echo ""
+echo "Usage:"
+echo "    frocker run -h                                            display this help message."
+echo "    frocker run [-n NAME] [-i IMAGE_NAME] [-p PORT_MAPPING]   run the docker container for this folder, build if it doesn't exist yet"
+
+}
+
+function command_run {
+
+local ports=""
+
+while getopts ":hn:i:p:" opt; do
+    case ${opt} in
+        h )
+            display_command_run_help
+            exit 0
+            ;;
+        n )
+            name=$OPTARG
+            ;;
+        i )
+            image_name=$OPTARG
+            ;;
+        p )
+            ports="${ports} -p $OPTARG"
+            ;;
+        \? )
+            echo "Invalid Option: -$OPTARG" 1>&2
+            display_command_build_help
+            exit 1
+            ;;
+        : )
+            echo "Invalid Option: -$OPTARG requires an argument" 1>&2
+            display_command_build_help
+            exit 1
+            ;;
+    esac
+done
+
+if [[ -z "$name" ]]; then
+    name="freckelize_${THIS_DIR_NAME}"
+fi
+
+if [[ -z "$image_name" ]]; then
+    image_name="${DOCKER_ID}:freckelize_${THIS_DIR_NAME}"
+fi
+
+mounts="--mount type=bind,source=${THIS_DIR},target=/freckle"
+
+run "${name}" "${image_name}" "${ports}" "${mounts}"
+
+}
+
+function display_help {
+echo ""
+echo "Usage:"
+echo "    frocker -h                      Display this help message."
+echo "    frocker build                   Build a Docker container for this freckle folder."
+}
+
+# =============================================================
 # VARS
-CONTAINER_NAME=wordpress
-DOCKER_USERNAME="local"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-FRECKLE_CONTEXT_REPO="frkl:${CONTAINER_NAME}"
-FRECKELIZE_DOCKER_VARS_FILE=".freckelize/docker.yml"
-FRECKLES_VERSION=git
+THIS_DIR="${PWD}"
+cd -P "$THIS_DIR"
 
-MOUNT_MYSQL_VOLUME=false
+THIS_DIR_NAME=$(basename ${THIS_DIR})
+
+# CONTAINER_NAME=wordpress
+# DOCKER_USERNAME="local"
+
+# FRECKLE_CONTEXT_REPO="frkl:${CONTAINER_NAME}"
+# FRECKELIZE_DOCKER_VARS_FILE=".freckelize/docker.yml"
+# FRECKLES_VERSION=git
+
+# MOUNT_MYSQL_VOLUME=false
 
 # script start
 # --------------
 
-THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd -P "$THIS_DIR"
+# MYSQL_DIR=".freckelize/docker/mysql_volume"
+# BACKUPS_DIR="backups"
+# WORDPRESS_DIR="wordpress"
 
-MYSQL_DIR=".freckelize/docker/mysql_volume"
-BACKUPS_DIR="backups"
-WORDPRESS_DIR="wordpress"
+# IMAGE_NAME="${DOCKER_USERNAME}:${CONTAINER_NAME}"
 
-IMAGE_NAME="${DOCKER_USERNAME}:${CONTAINER_NAME}"
 
-#NO_CACHE="--no-cache"
-NO_CACHE=""
+# NO_CACHE=""
 
-if [[ "$1" == "--build" ]]; then
-    docker build ${NO_CACHE} -t "$IMAGE_NAME" -f Dockerfile --build-arg FRECKLES_VERSION="${FRECKLES_VERSION}" --build-arg FRECKLE_CONTEXT_REPOS="-r ${FRECKLE_CONTEXT_REPO}" --build-arg FRECKLE_EXTRA_VARS="-v /freckle/${FRECKELIZE_DOCKER_VARS_FILE}" .  || { echo 'docker built process failed' ; exit 1; }
+
+# =============================================================
+# ARG PARSING
+
+echo ""
+
+while getopts ":h" opt; do
+    case ${opt} in
+        h )
+            display_help
+            exit 0
+            ;;
+        \? )
+            echo "Invalid Option: -$OPTARG" 1>&2
+            display_help
+            exit 1
+            ;;
+    esac
+done
+shift $((OPTIND -1))
+
+if [ -z "$1" ]
+then
+    display_help
+    exit 0
 fi
 
-if [ ! -d "${THIS_DIR}/${MYSQL_DIR}/mysql" ] && [ "$MOUNT_MYSQL_VOLUME" = true ]; then
-    # copy 'raw' mysql database, so we don't loose the data we are working on when docker container is stopped
-    echo "Copying initial mysql data to: ${THIS_DIR}/${MYSQL_DIR}..."
-    mkdir -p "${THIS_DIR}/${MYSQL_DIR}"
-    docker run -i --rm --mount type=bind,source="${THIS_DIR}/${MYSQL_DIR}",target="/mysql_init" ${IMAGE_NAME} /bin/bash << EOF
+subcommand=$1
+shift
 
-cp -a /var/lib/mysql/* /mysql_init
+case "$subcommand" in
 
-EOF
-fi
-
-if [ ! -s ${THIS_DIR}/wordpress/wp-config.php ]; then
-    echo "Copying initial wordpress config file to: wordpress/wp-config.php..."
-    docker run -i --rm --mount type=bind,source="${THIS_DIR}/wordpress",target="/freckle/wordpress_init" ${IMAGE_NAME} /bin/bash << EOF
-
-cp -a /freckle/wordpress/wp-config.php /freckle/wordpress_init/wp-config.php
-
-EOF
-fi
-
-if [ ! -d ${THIS_DIR}/wordpress/wp-content/themes ]; then
-    echo "Copying initial wordpress content folder to: wordpress/wp-content..."
-    docker run -i --rm --mount type=bind,source="${THIS_DIR}/wordpress",target="/freckle/wordpress_init" ${IMAGE_NAME} /bin/bash << EOF
-  
-cp -a /freckle/wordpress/wp-content/* /freckle/wordpress_init/wp-content/
-
-EOF
-fi
-
-C_NAME="freckelize_${CONTAINER_NAME}"
-
-result=$( docker ps | grep ${C_NAME} )
-
-if [[ -n "$result" ]]; then
-   echo "Container '${C_NAME}' already running. Doing nothing..."
-   exit 0
-fi
-
-result=$( docker ps -a | grep ${C_NAME} )
-
-if [[ -n "$result" ]]; then
-   echo "Container '${C_NAME}' already exists. Starting..."
-   docker start "${C_NAME}"
-else
-
-   if [ "$MOUNT_MYSQL_VOLUME" = true ]; then
-       MYSQL_MOUNT_OPTION="--mount type=bind,source=\"${THIS_DIR}/${MYSQL_DIR}\",target=/var/lib/mysql"
-   fi
-
-   echo "Container '${C_NAME}' does not exist, creating and starting it..."
-   docker_id=$(docker run --name "${C_NAME}" -p 8080:8080 ${MYSQL_MOUNT_OPTION} --mount type=bind,source="${THIS_DIR}",target="/freckle"  -d "$IMAGE_NAME")
-   echo "   container id: ${docker_id}"
-fi
+    build)
+        command_build "$@"
+        ;;
+    run)
+        command_run "$@"
+        ;;
+    stop)
+        command_stop "$@"
+        ;;
+    rm)
+        command_rm "$@"
+        ;;
+esac
 
 exit 0
-
-
-#docker run --rm -it -p 8080:8080 --mount type=bind,source="$THIS_DIR",target="/freckle" --mount type=bind,source="${THIS_DIR}/${MYSQL_DIR}",target="/var/lib/mysql"  "$IMAGE_NAME" /bin/bash --login
-#docker run --rm -it -p 8080:8080 --mount type=bind,source="$THIS_DIR",target="/freckle" "$IMAGE_NAME" /bin/bash --login
-#docker run -it -p 8080:8080 "$IMAGE_NAME" /bin/bash --login
-
-
