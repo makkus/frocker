@@ -17,6 +17,8 @@ NO_CACHE="--no-cache"
 DOCKER_DEFAULTS_FILE=".freckelize/docker/defaults.yml"
 FROCKER_ALIASES_FILE=".freckelize/docker/aliases.frocker"
 FROCKER_CONTAINER_DEFAULTS_FILE=".freckelize/docker/container_defaults.frocker"
+FROCKER_PROJECT_BUILD_HELP=".freckelize/docker/build.help.frocker"
+FROCKER_PROJECT_RUN_HELP=".freckelize/docker/run.help.frocker"
 VAGRANT_DEFAULTS_FILE=".freckelize/vagrant/defaults.yml"
 
 # =============================================================
@@ -58,6 +60,15 @@ function display_command_build_help {
     echo "Usage:"
     echo "    frocker build -h                               display this help message."
     echo "    frocker build [-i IMAGE_NAME] [-r CONTEXT_REPO]      build a docker container for the current folder, optionally using the provided name"
+
+    if [[ -f "${THIS_DIR}/${FROCKER_PROJECT_BUILD_HELP}" ]]; then
+        echo ""
+        echo "Project specific help:"
+        echo "----------------------"
+        echo ""
+        cat "${THIS_DIR}/${FROCKER_PROJECT_BUILD_HELP}"
+        echo ""
+    fi
 }
 
 function build {
@@ -76,6 +87,10 @@ function build {
     echo ""
 
     docker build ${NO_CACHE} -t "${DOCKER_ID}:${1}" -f Dockerfile --build-arg FRECKLES_VERSION="${FRECKLES_VERSION}" --build-arg FRECKLE_CONTEXT_REPOS="${repos}" --build-arg FRECKLE_EXTRA_VARS="${vars}" .  || error_exit 'docker built process failed'
+
+    if [[ -f "${THIS_DIR}/${FROCKER_PROJECT_BUILD_HELP}" ]]; then
+        cat "${THIS_DIR}/${FROCKER_PROJECT_BUILD_HELP}"
+    fi
 }
 
 function command_build {
