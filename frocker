@@ -18,6 +18,7 @@ DOCKER_DEFAULTS_FILE=".freckelize/docker/defaults.yml"
 FROCKER_ALIASES_FILE=".freckelize/docker/aliases.frocker"
 FROCKER_CONTAINER_DEFAULTS_FILE=".freckelize/docker/container_defaults.frocker"
 FROCKER_PROJECT_BUILD_HELP=".freckelize/docker/build.help.frocker"
+FROCKER_PROJECT_POST_BUILD_HELP=".freckelize/docker/post.build.help.frocker"
 FROCKER_PROJECT_RUN_HELP=".freckelize/docker/run.help.frocker"
 VAGRANT_DEFAULTS_FILE=".freckelize/vagrant/defaults.yml"
 
@@ -292,6 +293,77 @@ function command_run {
     run "${name}" "${image_name}" "${ports}" "${mounts}" "${rm}" "${delete_existing}"
 
 }
+
+function display_command_enter_help {
+    echo ""
+    echo "Usage:"
+    echo "    frocker enter -h                   display this help message."
+    echo "    frocker enter [-n NAME]            enter the container."
+}
+
+function enter_container {
+
+    container_name="${1}"
+    user="${2}"
+
+    result=$( docker ps | grep ${container_name} )
+
+    if [[ ! -n "$result" ]]; then
+        result=$( docker ps -a | grep ${container_name} )
+        if [[ -n "$result" ]]; then
+            echo "Container '${container_name}' stopped, starting it..."
+            c_name=$(docker start "${container_name}")
+            echo "   container started: ${container_name}"
+        else
+            echo "No container with name '${container_name}' exists. Please create it first (by using 'frocker run ...')"
+            exit 1
+        fi
+    fi
+
+    echo "Entering container: '${container_name}..."
+    docker exec -it ${user} ${container_name} /bin/bash -l
+}
+
+function command_enter {
+
+    user=""
+
+    while getopts ":hn:u:" opt; do
+        case ${opt} in
+            h )
+                display_command_build_help
+                exit 0
+                ;;
+            n )
+                name=$OPTARG
+                ;;
+            u )
+                user="--user $OPTARG"
+                ;;
+            \? )
+                echo "Invalid Option: -$OPTARG" 1>&2
+                display_command_build_help
+                exit 1
+                ;;
+            : )
+                echo "Invalid Option: -$OPTARG requires an argument" 1>&2
+                display_command_build_help
+                exit 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$name" ]]; then
+        name="freckelize_${THIS_DIR_NAME}"
+    fi
+
+    if [[ -z "$user" ]]; then
+        user="--user freckles"
+    fi
+
+    enter_container "${name}" "${user}"
+}
+
 
 function display_command_exec_help {
     echo ""
@@ -590,6 +662,9 @@ case "$subcommand" in
         ;;
     exec)
         command_exec "$@"
+        ;;
+    enter)
+        command_enter "$@"
         ;;
     *)
         command_alias ${subcommand} $@
