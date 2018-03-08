@@ -179,6 +179,7 @@ function run {
     mounts="${4}"
     rm="${5}"
     delete_existing="${6}"
+    run_shell="${7}"
 
     # check if image exists
     if [[ "$(docker images -q ${image_name} 2> /dev/null)" == "" ]]; then
@@ -208,6 +209,14 @@ function run {
         echo "   container removed: ${container_name}"
     fi
 
+    if [ "${run_shell}" = true ]; then
+        run_type="-i -t"
+        run_command="su -l -c /bin/bash freckles"
+    else
+        run_type="-d"
+        run_command=""
+    fi
+
     result=$( docker ps -a | grep ${container_name} )
 
     if [[ -n "$result" ]]; then
@@ -216,8 +225,14 @@ function run {
         echo "   container started: ${container_name}"
     else
         echo "Container '${container_name}' does not exist, creating and starting it..."
-        docker_id=$(docker run --name "${container_name}" ${rm} ${ports} ${mounts} -d "${image_name}")
-        echo "   container id: ${docker_id}"
+        # echo "docker run --name "${container_name}" ${rm} ${ports} ${mounts} ${run_type} ${image_name} ${run_command}"
+        if [ "${run_shell}" = true ]; then
+            docker run --name "${container_name}" ${rm} ${ports} ${mounts} ${run_type} "${image_name}" ${run_command}
+        else
+            docker_id=$(docker run --name "${container_name}" ${rm} ${ports} ${mounts} ${run_type} "${image_name}" ${run_command})
+            echo "   container id: ${docker_id}"
+        fi
+
     fi
 
 }
@@ -235,8 +250,9 @@ function display_command_run_help {
 function command_run {
 
     local ports=""
+    local run_shell=false
 
-    while getopts ":hxyrn:i:p:f:" opt; do
+    while getopts ":shxyrn:i:p:f:" opt; do
         case ${opt} in
             h )
                 display_command_run_help
@@ -262,6 +278,9 @@ function command_run {
                 ;;
             f )
                 freckles_source="$OPTARG"
+                ;;
+            s )
+                run_shell=true
                 ;;
             \? )
                 echo "Invalid Option: -$OPTARG" 1>&2
@@ -302,7 +321,7 @@ function command_run {
         mounts="${mounts} --mount type=bind,source=${freckles_source},target=/freckles_src"
     fi
 
-    run "${name}" "${image_name}" "${ports}" "${mounts}" "${rm}" "${delete_existing}"
+    run "${name}" "${image_name}" "${ports}" "${mounts}" "${rm}" "${delete_existing}" "${run_shell}"
 
 }
 
