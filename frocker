@@ -12,7 +12,7 @@
 PROGNAME="frocker"
 
 DOCKER_ID="local"
-FRECKLES_VERSION="git"
+FRECKLES_VERSION="default"
 NO_CACHE="--no-cache"
 DOCKER_DEFAULTS_FILE=".freckelize/docker/defaults.yml"
 FROCKER_ALIASES_FILE=".freckelize/docker/aliases.frocker"
@@ -77,6 +77,7 @@ function build {
     image_name=${1}
     repos=${2}
     vars=${3}
+    skip=${4}
 
     if [[ ! -f "${THIS_DIR}/Dockerfile" ]]; then
         echo "* no Dockerfile found in this folder, creating default one..."
@@ -87,7 +88,7 @@ function build {
     echo "- starting build process..."
     echo ""
 
-    docker build ${NO_CACHE} -t "${DOCKER_ID}:${1}" -f Dockerfile --build-arg FRECKLES_VERSION="${FRECKLES_VERSION}" --build-arg FRECKLE_CONTEXT_REPOS="${repos}" --build-arg FRECKLE_EXTRA_VARS="${vars}" .  || error_exit 'docker built process failed'
+    docker build ${NO_CACHE} -t "${DOCKER_ID}:${1}" -f Dockerfile --build-arg FRECKELIZE_SKIP="${skip}" --build-arg FRECKLES_VERSION="${FRECKLES_VERSION}" --build-arg FRECKLE_CONTEXT_REPOS="${repos}" --build-arg FRECKLE_EXTRA_VARS="${vars}" .  || error_exit 'docker built process failed'
 
     if [[ -f "${THIS_DIR}/${FROCKER_PROJECT_BUILD_HELP}" ]]; then
         cat "${THIS_DIR}/${FROCKER_PROJECT_BUILD_HELP}"
@@ -98,8 +99,9 @@ function command_build {
 
     local repos=""
     local vars=""
+    local skip=false
 
-    while getopts ":hi:r:v:" opt; do
+    while getopts ":hsi:r:v:" opt; do
         case ${opt} in
             h )
                 display_command_build_help
@@ -107,6 +109,9 @@ function command_build {
                 ;;
             i )
                 name=$OPTARG
+                ;;
+            s )
+                skip=true
                 ;;
             r )
                 repos="${repos} -r $OPTARG"
@@ -162,7 +167,7 @@ function command_build {
     fi
 
 
-    build "${name}" "${repos}" "${vars}"
+    build "${name}" "${repos}" "${vars}" "${skip}"
 
 }
 
@@ -472,7 +477,7 @@ function stop_container {
     result=$( docker ps | grep ${container_name} )
 
     if [[ -n "$result" ]]; then
-        echo "Stopping container '${container_name}"
+        echo "Stopping container '${container_name}'"
         c_name=$(docker stop "${container_name}")
         echo "    container stopped: ${container_name}"
     else
