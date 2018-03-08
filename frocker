@@ -236,7 +236,7 @@ function command_run {
 
     local ports=""
 
-    while getopts ":hxyrn:i:p:" opt; do
+    while getopts ":hxyrn:i:p:f:" opt; do
         case ${opt} in
             h )
                 display_command_run_help
@@ -259,6 +259,9 @@ function command_run {
                 ;;
             y )
                 no_mounts=true
+                ;;
+            f )
+                freckles_source="$OPTARG"
                 ;;
             \? )
                 echo "Invalid Option: -$OPTARG" 1>&2
@@ -293,6 +296,10 @@ function command_run {
         mounts=""
     else
         mounts="--mount type=bind,source=${THIS_DIR},target=/freckle"
+    fi
+
+    if [[ ! -z "$freckles_source" ]]; then
+        mounts="${mounts} --mount type=bind,source=${freckles_source},target=/freckles_src"
     fi
 
     run "${name}" "${image_name}" "${ports}" "${mounts}" "${rm}" "${delete_existing}"
