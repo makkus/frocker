@@ -11,9 +11,11 @@
 # global vars
 PROGNAME="frocker"
 
-DOCKER_ID="local"
-FRECKLES_VERSION="default"
-NO_CACHE="--no-cache"
+DOCKER_ID="freckles"
+#FRECKLES_VERSION="default"
+#FRECKLES_VERSION="git"
+#NO_CACHE="--no-cache"
+NO_CACHE=""
 DOCKER_DEFAULTS_FILE=".freckelize/docker/defaults.yml"
 FROCKER_ALIASES_FILE=".freckelize/docker/aliases.frocker"
 FROCKER_CONTAINER_DEFAULTS_FILE=".freckelize/docker/container_defaults.frocker"
@@ -78,6 +80,7 @@ function build {
     repos=${2}
     vars=${3}
     skip=${4}
+    freckles_version=${5}
 
     if [[ ! -f "${THIS_DIR}/Dockerfile" ]]; then
         echo "* no Dockerfile found in this folder, creating default one..."
@@ -88,7 +91,7 @@ function build {
     echo "- starting build process..."
     echo ""
 
-    docker build ${NO_CACHE} -t "${DOCKER_ID}:${1}" -f Dockerfile --build-arg FRECKELIZE_SKIP="${skip}" --build-arg FRECKLES_VERSION="${FRECKLES_VERSION}" --build-arg FRECKLE_CONTEXT_REPOS="${repos}" --build-arg FRECKLE_EXTRA_VARS="${vars}" .  || error_exit 'docker built process failed'
+    docker build ${NO_CACHE} -t "${DOCKER_ID}:${1}" -f Dockerfile --build-arg FRECKELIZE_SKIP="${skip}" --build-arg FRECKLES_VERSION="${freckles_version}" --build-arg FRECKLE_CONTEXT_REPOS="${repos}" --build-arg FRECKLE_EXTRA_VARS="${vars}" .  || error_exit 'docker built process failed'
 
     if [[ -f "${THIS_DIR}/${FROCKER_PROJECT_BUILD_HELP}" ]]; then
         cat "${THIS_DIR}/${FROCKER_PROJECT_BUILD_HELP}"
@@ -100,8 +103,9 @@ function command_build {
     local repos=""
     local vars=""
     local skip=false
+    local freckles_version="default"
 
-    while getopts ":hsi:r:v:" opt; do
+    while getopts ":hsgi:r:v:" opt; do
         case ${opt} in
             h )
                 display_command_build_help
@@ -109,6 +113,9 @@ function command_build {
                 ;;
             i )
                 name=$OPTARG
+                ;;
+            g )
+                freckles_version="git"
                 ;;
             s )
                 skip=true
@@ -167,7 +174,7 @@ function command_build {
     fi
 
 
-    build "${name}" "${repos}" "${vars}" "${skip}"
+    build "${name}" "${repos}" "${vars}" "${skip}" "${freckles_version}"
 
 }
 
